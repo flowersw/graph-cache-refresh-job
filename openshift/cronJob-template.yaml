@@ -1,0 +1,98 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: graph-cache-refresh-cronjob
+  annotations:
+    description: >
+      This is Thoth Graph Cache Refresh CronJob, this template is meant to be used by Bots,
+      but could also be used by humans...
+    openshift.io/display-name: "Thoth: Graph Cache Refresh Job"
+    version: 0.7.1
+    tags: thoth,graph-cache-refresh,ai-stacks,aistacks,graph
+    template.openshift.io/documentation-url: https://github.com/Thoth-Station/
+    template.openshift.io/long-description: >
+      This template defines resources needed to deploy Thoth Graph Cache Refresh Job CronJob to OpenShift.
+    template.openshift.io/provider-display-name: "Red Hat, Inc."
+  labels:
+    template: graph-cache-refresh-cronjob
+    app: thoth
+    component: graph-cache-refresh
+
+parameters:
+  - description: Registry the ImageStream to be use lives in
+    displayName: ImageStream Registry
+    required: true
+    name: IMAGE_STREAM_REGISTRY
+    value: "docker-registry.default.svc:5000"
+
+  - displayName: Suspend CronJob run
+    description: Suspend CronJob run
+    required: true
+    name: THOTH_SUSPEND_JOB
+    value: "true"
+
+  - description: Project the ImageStream to be use lives in
+    displayName: ImageStream Project
+    required: true
+    name: IMAGE_STREAM_NAMESPACE
+    # TODO adjust ansible role so that we dont need a default here
+    value: "thoth-infra-stage"
+
+  - description: ImageStream to be used
+    displayName: ImageStream
+    required: true
+    name: IMAGE_STREAM
+    # Requires cURL installed.
+    value: "s2i-thoth-ubi8-py36"
+
+  - description: Tag of the ImageStream to be use
+    displayName: ImageStream Tag
+    required: true
+    name: IMAGE_STREAM_TAG
+    value: "latest"
+
+  - description: Generic webhook URL
+    displayName: Webhook URL
+    required: true
+    name: GENERIC_WEBHOOK_URL
+
+objects:
+  - kind: CronJob
+    apiVersion: batch/v1beta1
+    metadata:
+      name: graph-cache-refresh
+      labels:
+        app: thoth
+        component: graph-cache-refresh
+    spec:
+      schedule: "0 */12 * * *"
+      suspend: ${{THOTH_SUSPEND_JOB}}
+      concurrencyPolicy: Forbid
+      successfulJobsHistoryLimit: 2
+      failedJobsHistoryLimit: 4
+      startingDeadlineSeconds: 5000000
+      jobTemplate:
+        spec:
+          template:
+            metadata:
+              labels:
+                app: thoth
+                component: graph-cache-refresh
+            spec:
+              containers:
+                - image: "${IMAGE_STREAM_REGISTRY}/${IMAGE_STREAM_NAMESPACE}/${IMAGE_STREAM}:${IMAGE_STREAM_TAG}"
+                  name: graph-cache-refresh
+                  command: ["curl"]
+                  args:
+                    - --insecure
+                    - -XPOST
+                    - ${GENERIC_WEBHOOK_URL}
+                  env:
+                  resources:
+                    requests:
+                      memory: "64Mi"
+                      cpu: "500m"
+                    limits:
+                      memory: "64Mi"
+                      cpu: "500m"
+              restartPolicy: OnFailure
